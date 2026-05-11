@@ -148,7 +148,11 @@ fix_ns_records() {
         return 1
     fi
 
-    base_ns=$(echo "$ns_domain" | sed 's/^[^.]*\.\(.*\)/\1/')
+    if [[ "$ns_domain" == ns1.* ]]; then
+        base_ns=$(echo "$ns_domain" | sed 's/^[^.]*\.\(.*\)/\1/')
+    else
+        base_ns="$ns_domain"
+    fi
 
     echo ""
     echo -e "${YELLOW}⚠  This will update NS records for ALL zones${NC}"
