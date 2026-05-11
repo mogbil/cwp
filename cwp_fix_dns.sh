@@ -173,16 +173,26 @@ fix_ns_records() {
     fi
 
     count=0
+    skip_count=0
     for file in "$NAMED_DIR"/*.db; do
         [ -f "$file" ] || continue
         zone=$(basename "$file" .db)
 
-        # Remove existing @ NS lines (pattern: @ NS 86400 ns1.xxx.)
-        sed -i '/^@[[:space:]]*NS[[:space:]]/d' "$file"
+        # Check if NS records already correct
+        if grep -qE "^@[[:space:]]*NS[[:space:]]+[0-9]+[[:space:]]+ns1\.$ns_domain\.$" "$file" && \
+           grep -qE "^@[[:space:]]*NS[[:space:]]+[0-9]+[[:space:]]+ns2\.$ns_domain\.$" "$file"; then
+            echo -e "  ${BLUE}⊘${NC} $zone: already correct, skipped"
+            ((skip_count++))
+            continue
+        fi
 
-        # Add new NS records (with trailing dot)
-        echo "@ NS 86400 ns1.$ns_domain." >> "$file"
-        echo "@ NS 86400 ns2.$ns_domain." >> "$file"
+        # Remove existing @ NS lines (both formats: with IN and without IN)
+        sed -i '/^@[[:space:]]*NS[[:space:]]/d' "$file"
+        sed -i '/^@[[:space:]].*IN[[:space:]]*NS[[:space:]]/d' "$file"
+
+        # Add new NS records (with tabs to match existing format)
+        echo -e "@\t86400\tIN\tNS\t\tns1.$ns_domain." >> "$file"
+        echo -e "@\t86400\tIN\tNS\t\tns2.$ns_domain." >> "$file"
 
         echo -e "  ${GREEN}+${NC} $zone: @ NS ns1.$ns_domain. / ns2.$ns_domain."
         ((count++))
@@ -190,8 +200,13 @@ fix_ns_records() {
 
     if validate_zones; then
         if rndc reload > /dev/null 2>&1; then
+            if [ $skip_count -gt 0 ]; then
+            echo ""
+            echo -e "${GREEN}✓ NS records: $count updated, $skip_count skipped (already correct)${NC}"
+        else
             echo ""
             echo -e "${GREEN}✓ NS records updated for $count zones${NC}"
+        fi
             log_action "NS records updated to ns1.$ns_domain / ns2.$ns_domain"
         else
             echo -e "${RED}✗ rndc reload failed${NC}"
