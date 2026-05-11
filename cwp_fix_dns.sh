@@ -178,7 +178,6 @@ fix_ns_records() {
         [ -f "$file" ] || continue
         zone=$(basename "$file" .db)
 
-        # Check if NS records already correct
         if grep -qE "^@[[:space:]]*NS[[:space:]]+[0-9]+[[:space:]]+ns1\.$ns_domain\.$" "$file" && \
            grep -qE "^@[[:space:]]*NS[[:space:]]+[0-9]+[[:space:]]+ns2\.$ns_domain\.$" "$file"; then
             echo -e "  ${BLUE}⊘${NC} $zone: already correct, skipped"
@@ -186,15 +185,15 @@ fix_ns_records() {
             continue
         fi
 
-        # Remove existing @ NS lines (both formats: with IN and without IN)
         sed -i '/^@[[:space:]]*NS[[:space:]]/d' "$file"
         sed -i '/^@[[:space:]].*IN[[:space:]]*NS[[:space:]]/d' "$file"
 
-        # Add new NS records (with tabs to match existing format)
+        sed -i "s/ns1\.[a-zA-Z0-9.-]*\./ns1.$ns_domain./g" "$file"
+
         echo -e "@\t86400\tIN\tNS\t\tns1.$ns_domain." >> "$file"
         echo -e "@\t86400\tIN\tNS\t\tns2.$ns_domain." >> "$file"
 
-        echo -e "  ${GREEN}+${NC} $zone: @ NS ns1.$ns_domain. / ns2.$ns_domain."
+        echo -e "  ${GREEN}+${NC} $zone: SOA & NS updated to ns1.$ns_domain."
         ((count++))
     done
 
