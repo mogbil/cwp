@@ -13,14 +13,21 @@ BIND zone file manager for **CWP Control Web Panel**. Manages CNAME records for 
 
 ## Installation
 
-### Method 1: Download
+### Method 1: Quick Install (curl | sh)
+
+```bash
+curl -sL https://raw.githubusercontent.com/mogbil/cwp/main/cwp_fix_dns.sh | tee /usr/local/bin/cwp_fix_dns.sh > /dev/null && chmod +x /usr/local/bin/cwp_fix_dns٫sh
+cwp_fix_dns
+```
+
+### Method 2: Download
 
 ```bash
 wget -O /usr/local/bin/cwp_fix_dns.sh https://raw.githubusercontent.com/mogbil/cwp/main/cwp_fix_dns.sh
 chmod +x /usr/local/bin/cwp_fix_dns.sh
 ```
 
-### Method 2: Clone
+### Method 3: Clone
 
 ```bash
 git clone https://github.com/mogbil/cwp.git /tmp/cwp
@@ -29,7 +36,7 @@ chmod +x /usr/local/bin/cwp_fix_dns.sh
 rm -rf /tmp/cwp
 ```
 
-### Method 3: Manual Copy
+### Method 4: Manual Copy
 
 ```bash
 cp cwp_fix_dns.sh /usr/local/bin/cwp_fix_dns.sh
