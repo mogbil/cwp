@@ -133,6 +133,79 @@ create_backup() {
 }
 
 # ═══════════════════════════════════
+# Function: Fix NS Records
+# ═══════════════════════════════════
+fix_ns_records() {
+    echo ""
+    echo "═══════════════════════════════════"
+    echo "Fix NS Records (ns1/ns2)"
+    echo "═══════════════════════════════════"
+    echo ""
+
+    read -p "Enter domain (e.g. example.com): " domain
+    read -p "Enter IP address for ns1 & ns2: " ip
+
+    if [ -z "$domain" ] || [ -z "$ip" ]; then
+        echo -e "${RED}✗ Domain and IP are required${NC}"
+        return 1
+    fi
+
+    echo ""
+    echo -e "${YELLOW}⚠  This will set/update:${NC}"
+    echo "   ns1.$domain → $ip"
+    echo "   ns2.$domain → $ip"
+    echo ""
+    read -p "Continue? (yes/no): " confirm
+
+    if [[ "$confirm" != "yes" && "$confirm" != "y" ]]; then
+        echo "Cancelled"
+        return 0
+    fi
+
+    create_backup
+
+    if [ "$DRY_RUN" = true ]; then
+        echo -e "${YELLOW}DRY-RUN MODE - No changes will be made${NC}"
+        echo "  ns1.$domain → $ip (would be set)"
+        echo "  ns2.$domain → $ip (would be set)"
+        return 0
+    fi
+
+    count=0
+    for file in "$NAMED_DIR"/*.db; do
+        [ -f "$file" ] || continue
+        zone_domain=$(basename "$file" .db)
+
+        for ns in "ns1" "ns2"; do
+            full_ns="${ns}.${domain}"
+
+            # Remove existing ns1/ns2 lines for this domain
+            sed -i "/^${ns}\.${domain}[[:space:]]/d" "$file"
+            # Remove old A records pointing to this IP (for ns records)
+            sed -i "/^${ip}[[:space:]].*IN[[:space:]]*A$/d" "$file"
+
+            echo "$full_ns 86400 IN A $ip" >> "$file"
+            echo -e "  ${GREEN}+${NC} $zone_domain → $full_ns → $ip"
+            log_action "Set NS record: $full_ns → $ip"
+            ((count++))
+        done
+    done
+
+    if validate_zones; then
+        if rndc reload > /dev/null 2>&1; then
+            echo ""
+            echo -e "${GREEN}✓ NS records updated ($count records)${NC}"
+            log_action "NS records updated for $domain with IP $ip"
+        else
+            echo -e "${RED}✗ rndc reload failed${NC}"
+            log_action "NS fix: rndc reload failed" "ERROR"
+        fi
+    else
+        echo -e "${RED}✗ Zone validation failed${NC}"
+    fi
+}
+
+# ═══════════════════════════════════
 # Function: Restore Backup
 # ═══════════════════════════════════
 restore_backup() {
@@ -373,6 +446,7 @@ show_menu() {
     echo "  [4] Backup current zone files"
     echo "  [5] Restore from backup"
     echo "  [6] Show current MX/mail records"
+    echo "  [N] Fix NS Records (ns1/ns2)"
     echo "  [D] Toggle Dry-Run Mode (currently: $([ "$DRY_RUN" = true ] && echo "ON" || echo "OFF"))"
     echo "  [U] Quick Undo last operation"
     echo "  [0] Exit"
@@ -412,6 +486,10 @@ while true; do
             echo ""
             grep -E "^(mail|.*MX)" "$NAMED_DIR"/*.db 2>/dev/null | head -30
             echo ""
+            read -p "Press Enter to continue..."
+            ;;
+        N|n)
+            fix_ns_records
             read -p "Press Enter to continue..."
             ;;
         D|d)
