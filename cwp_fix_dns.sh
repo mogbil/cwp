@@ -142,18 +142,26 @@ fix_ns_records() {
     echo "═══════════════════════════════════"
     echo ""
 
-    read -p "Enter domain (e.g. example.com): " domain
-    read -p "Enter IP address for ns1 & ns2: " ip
+    read -p "Enter zone file name (e.g. example.com): " zone_file
+    read -p "Enter NS domain (e.g. ns1.centos-webpanel.com.): " ns_domain
+    read -p "Enter IP address for ns: " ip
 
-    if [ -z "$domain" ] || [ -z "$ip" ]; then
-        echo -e "${RED}✗ Domain and IP are required${NC}"
+    if [ -z "$zone_file" ] || [ -z "$ns_domain" ] || [ -z "$ip" ]; then
+        echo -e "${RED}✗ All fields are required${NC}"
+        return 1
+    fi
+
+    # Find the zone file
+    zone_path="$NAMED_DIR/${zone_file}.db"
+    if [ ! -f "$zone_path" ]; then
+        echo -e "${RED}✗ Zone file not found: $zone_path${NC}"
         return 1
     fi
 
     echo ""
     echo -e "${YELLOW}⚠  This will set/update:${NC}"
-    echo "   ns1.$domain → $ip"
-    echo "   ns2.$domain → $ip"
+    echo "   @  NS  86400  $ns_domain."
+    echo "   $ns_domain.  A  $ip"
     echo ""
     read -p "Continue? (yes/no): " confirm
 
@@ -166,43 +174,32 @@ fix_ns_records() {
 
     if [ "$DRY_RUN" = true ]; then
         echo -e "${YELLOW}DRY-RUN MODE - No changes will be made${NC}"
-        echo "  ns1.$domain → $ip (would be set)"
-        echo "  ns2.$domain → $ip (would be set)"
+        echo "  @ NS 86400 $ns_domain. (would be set)"
+        echo "  $ns_domain. A $ip (would be set)"
         return 0
     fi
 
-    count=0
-    for file in "$NAMED_DIR"/*.db; do
-        [ -f "$file" ] || continue
-        zone_domain=$(basename "$file" .db)
+    # Remove old NS records (@ NS ...)
+    sed -i "/^@[[:space:]].*IN[[:space:]]*NS[[:space:]].*$/d" "$zone_path"
+    # Remove old A records for the ns hostname
+    sed -i "/^${ns_domain}\.[[:space:]]/d" "$zone_path"
+    # Remove any orphan A records with same IP
+    sed -i "/^${ip}[[:space:]].*IN[[:space:]]*A$/d" "$zone_path"
 
-        for ns in "ns1" "ns2"; do
-            full_ns="${ns}.${domain}"
+    # Add NS record at zone apex (@)
+    echo "@ NS 86400 $ns_domain." >> "$zone_path"
+    # Add A record for the nameserver
+    echo "$ns_domain. 86400 IN A $ip" >> "$zone_path"
 
-            # Remove old NS records for this domain
-            sed -i "/^${domain}\.[[:space:]].*IN[[:space:]]*NS[[:space:]].*${ns}\.${domain}\.$/d" "$file"
-            # Remove old A records for ns1/ns2 hostnames
-            sed -i "/^${ns}\.${domain}[[:space:]]/d" "$file"
-            # Remove old A records pointing to this IP (for ns records)
-            sed -i "/^${ip}[[:space:]].*IN[[:space:]]*A$/d" "$file"
-
-            # Add NS record at zone apex
-            echo "$domain. NS 86400 $full_ns." >> "$file"
-            # Add A record for the nameserver hostname
-            echo "$full_ns. 86400 IN A $ip" >> "$file"
-            echo -e "  ${GREEN}+${NC} $zone_domain → NS: $domain. → $full_ns."
-            echo -e "  ${GREEN}+${NC} $zone_domain → A: $full_ns. → $ip"
-            log_action "Set NS record: $domain. NS 86400 $full_ns."
-            log_action "Set A record: $full_ns. → $ip"
-            ((count+=2))
-        done
-    done
+    echo -e "  ${GREEN}+${NC} @ NS 86400 $ns_domain."
+    echo -e "  ${GREEN}+${NC} $ns_domain. A $ip"
+    log_action "Set NS records for $zone_file: NS=$ns_domain IP=$ip"
 
     if validate_zones; then
         if rndc reload > /dev/null 2>&1; then
             echo ""
-            echo -e "${GREEN}✓ NS records updated ($((count/2)) zones)${NC}"
-            log_action "NS records updated for $domain with IP $ip"
+            echo -e "${GREEN}✓ NS records updated for $zone_file${NC}"
+            log_action "NS records updated for $zone_file with IP $ip"
         else
             echo -e "${RED}✗ rndc reload failed${NC}"
             log_action "NS fix: rndc reload failed" "ERROR"
@@ -320,32 +317,49 @@ process_records() {
         for sub in "${SUBDOMAINS[@]}"; do
             correct="$sub $ttl IN CNAME $domain."
 
+            # Check if correct record already exists
             if grep -qE "^${sub}[[:space:]]+${ttl}[[:space:]]+IN[[:space:]]+CNAME[[:space:]]+${domain}\.$" "$file"; then
                 echo -e "  ${GREEN}✓${NC} $domain → $sub: correct, skipped"
-            elif grep -qE "^${sub}[[:space:]]" "$file"; then
-                if [ "$mode" = "fix" ] || [ "$mode" = "both" ]; then
-                    if [ "$DRY_RUN" = true ]; then
-                        echo -e "  ${YELLOW}↻${NC} [DRY-RUN] $domain → $sub: would be fixed"
-                    else
-                        sed -i "/^${sub}[[:space:]]/d" "$file"
-                        echo "$correct" >> "$file"
-                        echo -e "  ${YELLOW}↻${NC} $domain → $sub: fixed"
-                        log_action "Fixed record: $sub IN CNAME $domain (TTL=$ttl)"
-                    fi
-                else
-                    echo -e "  ${BLUE}⊘${NC} $domain → $sub: exists (skipped in add mode)"
-                fi
             else
-                if [ "$mode" = "add" ] || [ "$mode" = "both" ]; then
-                    if [ "$DRY_RUN" = true ]; then
-                        echo -e "  ${GREEN}+${NC} [DRY-RUN] $domain → $sub: would be added"
+                # Check if any record for this subdomain exists (A, CNAME, MX, etc.)
+                existing=$(grep -E "^${sub}[[:space:]]" "$file" 2>/dev/null)
+
+                if [ -n "$existing" ]; then
+                    # Delete ALL records for this subdomain first
+                    sed -i "/^${sub}[[:space:]]/d" "$file"
+
+                    if [ "$mode" = "fix" ] || [ "$mode" = "both" ]; then
+                        if [ "$DRY_RUN" = true ]; then
+                            echo -e "  ${YELLOW}↻${NC} [DRY-RUN] $domain → $sub: would be fixed"
+                        else
+                            echo "$correct" >> "$file"
+                            echo -e "  ${YELLOW}↻${NC} $domain → $sub: fixed"
+                            log_action "Fixed record: $sub IN CNAME $domain (TTL=$ttl)"
+                        fi
                     else
-                        echo "$correct" >> "$file"
-                        echo -e "  ${GREEN}+${NC} $domain → $sub: added"
-                        log_action "Added record: $sub IN CNAME $domain (TTL=$ttl)"
+                        if [ "$DRY_RUN" = true ]; then
+                            echo -e "  ${BLUE}⊘${NC} [DRY-RUN] $domain → $sub: exists (would skip in fix mode)"
+                        else
+                            echo -e "  ${BLUE}⊘${NC} $domain → $sub: exists (skipped in add mode)"
+                        fi
                     fi
                 else
-                    echo -e "  ${BLUE}⊘${NC} $domain → $sub: missing (skipped in fix mode)"
+                    # No existing record
+                    if [ "$mode" = "add" ] || [ "$mode" = "both" ]; then
+                        if [ "$DRY_RUN" = true ]; then
+                            echo -e "  ${GREEN}+${NC} [DRY-RUN] $domain → $sub: would be added"
+                        else
+                            echo "$correct" >> "$file"
+                            echo -e "  ${GREEN}+${NC} $domain → $sub: added"
+                            log_action "Added record: $sub IN CNAME $domain (TTL=$ttl)"
+                        fi
+                    else
+                        if [ "$DRY_RUN" = true ]; then
+                            echo -e "  ${BLUE}⊘${NC} [DRY-RUN] $domain → $sub: missing (would skip in fix mode)"
+                        else
+                            echo -e "  ${BLUE}⊘${NC} $domain → $sub: missing (skipped in fix mode)"
+                        fi
+                    fi
                 fi
             fi
         done
