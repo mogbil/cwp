@@ -177,8 +177,10 @@ fix_ns_records() {
         [ -f "$file" ] || continue
         zone=$(basename "$file" .db)
 
-        sed -i '/^@[[:space:]].*IN[[:space:]]*NS[[:space:]]/d' "$file"
+        # Remove existing @ NS lines (pattern: @ NS 86400 ns1.xxx.)
+        sed -i '/^@[[:space:]]*NS[[:space:]]/d' "$file"
 
+        # Add new NS records (with trailing dot)
         echo "@ NS 86400 ns1.$ns_domain." >> "$file"
         echo "@ NS 86400 ns2.$ns_domain." >> "$file"
 
