@@ -70,6 +70,7 @@ EMAIL_TO=""                      # Email for notifications (optional)
 | `[4]` Backup | Create backup of all zone files |
 | `[5]` Restore | Restore from backup |
 | `[6]` Show MX/mail | Display current MX and mail records |
+| `[N]` Fix NS Records (ns1/ns2)|
 | `[D]` Toggle Dry-Run | Preview changes without applying |
 | `[U]` Quick Undo | Restore last backup |
 | `[0]` Exit | Exit script |
