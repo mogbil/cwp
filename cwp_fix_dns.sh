@@ -176,9 +176,12 @@ fix_ns_records() {
     for file in "$NAMED_DIR"/*.db; do
         [ -f "$file" ] || continue
         zone=$(basename "$file" .db)
-        sed -i "/^@[[:space:]].*IN[[:space:]]*NS[[:space:]].*$/d" "$file"
+
+        sed -i '/^@[[:space:]].*IN[[:space:]]*NS[[:space:]]/d' "$file"
+
         echo "@ NS 86400 ns1.$ns_domain." >> "$file"
         echo "@ NS 86400 ns2.$ns_domain." >> "$file"
+
         echo -e "  ${GREEN}+${NC} $zone: @ NS ns1.$ns_domain. / ns2.$ns_domain."
         ((count++))
     done
