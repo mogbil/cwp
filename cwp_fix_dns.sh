@@ -136,28 +136,21 @@ create_backup() {
 fix_ns_records() {
     echo ""
     echo "═══════════════════════════════════"
-    echo "Fix NS Records (ns1/ns2)"
+    echo "Fix NS Records"
     echo "═══════════════════════════════════"
     echo ""
 
-    read -p "Enter NS Domain (e.g. example.com): " ns_domain
-    read -p "Enter IP address for ns1 & ns2: " ip
+    read -p "Enter new NS domain (e.g. example.com): " ns_domain
 
-    if [ -z "$ns_domain" ] || [ -z "$ip" ]; then
-        echo -e "${RED}✗ NS domain and IP are required${NC}"
+    if [ -z "$ns_domain" ]; then
+        echo -e "${RED}✗ NS domain is required${NC}"
         return 1
     fi
 
-    if [[ "$ns_domain" == ns1.* ]]; then
-        base_ns=$(echo "$ns_domain" | sed 's/^[^.]*\.\(.*\)/\1/')
-    else
-        base_ns="$ns_domain"
-    fi
-
     echo ""
-    echo -e "${YELLOW}⚠  This will update NS records for ALL zones${NC}"
-    echo "   NS: ns1.$base_ns. and ns2.$base_ns."
-    echo "   IP: $ip"
+    echo -e "${YELLOW}⚠  This will replace NS records for ALL zones${NC}"
+    echo "   Old: ns1.* / ns2.*"
+    echo "   New: ns1.$ns_domain. / ns2.$ns_domain."
     echo ""
     read -p "Continue? (yes/no): " confirm
 
@@ -173,8 +166,8 @@ fix_ns_records() {
         for file in "$NAMED_DIR"/*.db; do
             [ -f "$file" ] || continue
             zone=$(basename "$file" .db)
-            echo "  @ NS 86400 ns1.$base_ns. (would be set)"
-            echo "  @ NS 86400 ns2.$base_ns. (would be set)"
+            echo "  $zone: @ NS 86400 ns1.$ns_domain. (would be set)"
+            echo "  $zone: @ NS 86400 ns2.$ns_domain. (would be set)"
         done
         return 0
     fi
@@ -183,16 +176,10 @@ fix_ns_records() {
     for file in "$NAMED_DIR"/*.db; do
         [ -f "$file" ] || continue
         zone=$(basename "$file" .db)
-        ns1="ns1.$base_ns"
-        ns2="ns2.$base_ns"
-
         sed -i "/^@[[:space:]].*IN[[:space:]]*NS[[:space:]].*$/d" "$file"
-        sed -i "/^${ns1}\.[[:space:]]/d" "$file"
-        sed -i "/^${ns2}\.[[:space:]]/d" "$file"
-        sed -i "/^${ip}[[:space:]].*IN[[:space:]]*A$/d" "$file"
-        echo "@ NS 86400 $ns1." >> "$file"
-        echo "@ NS 86400 $ns2." >> "$file"
-        echo -e "  ${GREEN}+${NC} $zone: NS updated"
+        echo "@ NS 86400 ns1.$ns_domain." >> "$file"
+        echo "@ NS 86400 ns2.$ns_domain." >> "$file"
+        echo -e "  ${GREEN}+${NC} $zone: @ NS ns1.$ns_domain. / ns2.$ns_domain."
         ((count++))
     done
 
@@ -200,7 +187,7 @@ fix_ns_records() {
         if rndc reload > /dev/null 2>&1; then
             echo ""
             echo -e "${GREEN}✓ NS records updated for $count zones${NC}"
-            log_action "NS records updated for all zones with IP $ip"
+            log_action "NS records updated to ns1.$ns_domain / ns2.$ns_domain"
         else
             echo -e "${RED}✗ rndc reload failed${NC}"
             log_action "NS fix: rndc reload failed" "ERROR"
