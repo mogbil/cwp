@@ -179,22 +179,29 @@ fix_ns_records() {
         for ns in "ns1" "ns2"; do
             full_ns="${ns}.${domain}"
 
-            # Remove existing ns1/ns2 lines for this domain
+            # Remove old NS records for this domain
+            sed -i "/^${domain}\.[[:space:]].*IN[[:space:]]*NS[[:space:]].*${ns}\.${domain}\.$/d" "$file"
+            # Remove old A records for ns1/ns2 hostnames
             sed -i "/^${ns}\.${domain}[[:space:]]/d" "$file"
             # Remove old A records pointing to this IP (for ns records)
             sed -i "/^${ip}[[:space:]].*IN[[:space:]]*A$/d" "$file"
 
-            echo "$full_ns 86400 IN A $ip" >> "$file"
-            echo -e "  ${GREEN}+${NC} $zone_domain → $full_ns → $ip"
-            log_action "Set NS record: $full_ns → $ip"
-            ((count++))
+            # Add NS record at zone apex
+            echo "$domain. NS 86400 $full_ns." >> "$file"
+            # Add A record for the nameserver hostname
+            echo "$full_ns. 86400 IN A $ip" >> "$file"
+            echo -e "  ${GREEN}+${NC} $zone_domain → NS: $domain. → $full_ns."
+            echo -e "  ${GREEN}+${NC} $zone_domain → A: $full_ns. → $ip"
+            log_action "Set NS record: $domain. NS 86400 $full_ns."
+            log_action "Set A record: $full_ns. → $ip"
+            ((count+=2))
         done
     done
 
     if validate_zones; then
         if rndc reload > /dev/null 2>&1; then
             echo ""
-            echo -e "${GREEN}✓ NS records updated ($count records)${NC}"
+            echo -e "${GREEN}✓ NS records updated ($((count/2)) zones)${NC}"
             log_action "NS records updated for $domain with IP $ip"
         else
             echo -e "${RED}✗ rndc reload failed${NC}"
