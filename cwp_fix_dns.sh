@@ -140,7 +140,7 @@ fix_ns_records() {
     echo "═══════════════════════════════════"
     echo ""
 
-    read -p "Enter NS domain (e.g. example.com): " ns_domain
+    read -p "Enter NS Domain (e.g. example.com): " ns_domain
     read -p "Enter IP address for ns1 & ns2: " ip
 
     if [ -z "$ns_domain" ] || [ -z "$ip" ]; then
@@ -175,8 +175,6 @@ fix_ns_records() {
             zone=$(basename "$file" .db)
             echo "  @ NS 86400 ns1.$base_ns. (would be set)"
             echo "  @ NS 86400 ns2.$base_ns. (would be set)"
-            echo "  ns1.$base_ns. A $ip (would be set)"
-            echo "  ns2.$base_ns. A $ip (would be set)"
         done
         return 0
     fi
@@ -192,12 +190,8 @@ fix_ns_records() {
         sed -i "/^${ns1}\.[[:space:]]/d" "$file"
         sed -i "/^${ns2}\.[[:space:]]/d" "$file"
         sed -i "/^${ip}[[:space:]].*IN[[:space:]]*A$/d" "$file"
-
         echo "@ NS 86400 $ns1." >> "$file"
         echo "@ NS 86400 $ns2." >> "$file"
-        echo "$ns1. 86400 IN A $ip" >> "$file"
-        echo "$ns2. 86400 IN A $ip" >> "$file"
-
         echo -e "  ${GREEN}+${NC} $zone: NS updated"
         ((count++))
     done
